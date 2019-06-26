@@ -340,6 +340,103 @@ module Simp::Rake::Build
           * :ref => The top level git ref to use as the oldest point for all logs.
           * :source => The source Puppetfile to use (Default => 'tracking')
         EOM
+
+        task :changelog2, [:old_ver] do |t,args|
+          require 'fileutils'
+          require 'tempfile'
+          args.with_defaults(:source => 'tracking')
+          r10k_helper = R10KHelper.new("Puppetfile.#{args[:source]}")
+
+          git_logs = Hash.new
+
+          Dir.chdir(r10k_helper.basedir) do
+            # Get the Puppetfile from the previous release and write it out to a file.
+            pf_old_file = "Puppetfile.tmp.#{args[:source]}"
+            pf_old_data = %x(git show '#{args[:old_ver]}':Puppetfile.'#{args[:source]}')
+            return_status = "Could not retrieve Puppetfile.#{args[:source]} from branch #{args[:old_ver]}." unless $?.success?
+            File.delete("#{Dir.pwd}/#{pf_old_file}") if File.exists?("#{Dir.pwd}/#{pf_old_file}")
+            File.open("#{Dir.pwd}/#{pf_old_file}",'w'){ |f|
+              f.write(pf_old_data)
+            }
+
+            require 'pry-byebug'
+            # Read in the new file in Puppetfile format.
+            prev_r10k = R10K::Puppetfile.new(Dir.pwd, nil, pf_old_file)
+            prev_r10k.load!
+            old_modules = Hash.new
+            git_logs = Hash.new
+            prev_r10k.modules.each do |mod|
+              old_modules[mod.name] = {
+                :name        => mod.name,
+                :path        => mod.path.to_s,
+                :desired_ref => mod.desired_ref,
+                :git_source  => mod.repo.repo.origin,
+                :git_ref     => mod.repo.head,
+                :module_dir  => mod.basedir,
+              }
+            end
+
+            #Go through each Module
+            r10k_helper.each_module do |mod|
+              git_logs[mod[:name]] = Hash.new
+              if File.directory?(mod[:path])
+                Dir.chdir(mod[:path]) do
+                  # Compare Changelogs
+                  changelog =  "No CHANGELOG"
+                  if old_modules.has_key?(mod[:name])
+                    old_mod = old_modules[mod[:name]]
+                    if File.exists?("./CHANGELOG")
+                      logout = %x(git diff '#{old_mod[:desired_ref]}' CHANGELOG).split("\n")
+                      changelog = logout.collect{ |x| x[1..-1] if x.start_with?("+") && ! x.start_with?("+++") }.compact.join("\n")
+                    end
+                    log_output = %x(git log "#{old_mod[:desired_ref]}..#{mod[:desired_ref]}" --stat --reverse).chomp
+                  else
+                    if File.exists?("./CHANGELOG")
+                      changelog = File.read("./CHANGELOG")
+                    end
+                    log_output = "New Module"
+                    #%x(git log #{mod[:desired_ref]}" --stat --reverse).chomp
+                  end
+                  # Get the GIT log
+                  git_logs[mod[:name]][:changelog] = changelog
+                  git_logs[mod[:name]][:log] = log_output
+                  #unless log_output.strip.empty?
+                end
+              else
+                git_logs[mod[:name]] = {
+                  :changelog => 'No DATA',
+                  :log       => 'No DATA'
+                }
+              end
+
+            end
+            git_logs.keys.sort.each do |mod_name|
+              puts <<-EOM
+========
+#{mod_name}:
+-----------
+CHANGELOG
+
+#{git_logs[mod_name][:changelog].gsub(/^/,'  ')}
+
+-----------
+GIT LOG
+#{git_logs[mod_name][:log].gsub(/^/,'  ')}
+              EOM
+            end
+          end
+
+        # end task changelog2
+        end
+
+        desc <<-EOM
+        Provide a log of changes to all modules from the given top level Git reference.
+
+        Arguments:
+          * :ref => The top level git ref to use as the oldest point for all logs.
+          * :source => The source Puppetfile to use (Default => 'tracking')
+        EOM
+
         task :changelog, [:ref] do |t,args|
           args.with_defaults(:source => 'tracking')
 
@@ -395,5 +492,6 @@ module Simp::Rake::Build
     end
   end
 end
+
 
 # vim: ai ts=2 sts=2 et sw=2 ft=ruby
