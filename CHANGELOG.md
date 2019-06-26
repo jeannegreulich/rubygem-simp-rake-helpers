@@ -1,3 +1,7 @@
+### 5.9.1 /2019-06-25
+* Add option to create changelog listing from previous simp-core
+  versions puppet file.
+
 ### 5.9.0 /2019-05-31
 * Increase the upper bound of the Bundler dependency to < 3.0
 

@@ -334,10 +334,14 @@ module Simp::Rake::Build
         end
 
         desc <<-EOM
-        Provide a log of changes to all modules from the given top level Git reference.
+        Provide a log of changes to all modules since a previous release of SIMP.
+        It prints out both CHANGELOG and Git Logs.
+        At the end it prints out a summary of versions compared in comma deliminated
+        format.
 
         Arguments:
-          * :ref => The top level git ref to use as the oldest point for all logs.
+          * :old_ver => The previous release of SIMP to compare against. Make sure
+               this is a valid branch or tag.
           * :source => The source Puppetfile to use (Default => 'tracking')
         EOM
 
@@ -379,28 +383,35 @@ module Simp::Rake::Build
             #Go through each Module
             r10k_helper.each_module do |mod|
               git_logs[mod[:name]] = Hash.new
+              git_logs[mod[:name]][:curver] = mod[:desired_ref]
+              git_logs[mod[:name]][:prevver] = "No Previous Module Data"
               if File.directory?(mod[:path])
                 Dir.chdir(mod[:path]) do
                   # Compare Changelogs
                   changelog =  "No CHANGELOG"
                   if old_modules.has_key?(mod[:name])
                     old_mod = old_modules[mod[:name]]
-                    if File.exists?("./CHANGELOG")
-                      logout = %x(git diff '#{old_mod[:desired_ref]}' CHANGELOG).split("\n")
-                      changelog = logout.collect{ |x| x[1..-1] if x.start_with?("+") && ! x.start_with?("+++") }.compact.join("\n")
+                    if old_mod[:desired_ref] == mod[:desired_ref]
+                      changelog = "No Modules Changes"
+                      log_output = "No Module Changes"
+                    else
+                      git_logs[mod[:name]][:prevver] = old_mod[:desired_ref]
+                      if File.exists?("./CHANGELOG")
+                        logout = %x(git diff '#{old_mod[:desired_ref]}' CHANGELOG).split("\n")
+                        changelog = logout.collect{ |x| x[1..-1] if x.start_with?("+") && ! x.start_with?("+++") }.compact.join("\n")
+                      end
+                      log_output = %x(git log "#{old_mod[:desired_ref]}..#{mod[:desired_ref]}" --stat --reverse).chomp
                     end
-                    log_output = %x(git log "#{old_mod[:desired_ref]}..#{mod[:desired_ref]}" --stat --reverse).chomp
                   else
                     if File.exists?("./CHANGELOG")
                       changelog = File.read("./CHANGELOG")
                     end
-                    log_output = "New Module"
+                    log_output = "Module did not exist in previous version of SIMP"
                     #%x(git log #{mod[:desired_ref]}" --stat --reverse).chomp
                   end
                   # Get the GIT log
                   git_logs[mod[:name]][:changelog] = changelog
-                  git_logs[mod[:name]][:log] = log_output
-                  #unless log_output.strip.empty?
+                  git_logs[mod[:name]][:log] = log_output unless log_output.strip.empty?
                 end
               else
                 git_logs[mod[:name]] = {
@@ -410,10 +421,15 @@ module Simp::Rake::Build
               end
 
             end
+            version_info = ["Module Name, Current Version, Previous Version"]
             git_logs.keys.sort.each do |mod_name|
+              version_info << "#{mod_name},#{git_logs[mod_name][:curver]},#{git_logs[mod_name][:prevver]}"
               puts <<-EOM
 ========
 #{mod_name}:
+
+Current  Version: #{git_logs[mod_name][:curver]}
+Previous Version: #{git_logs[mod_name][:prevver]}
 -----------
 CHANGELOG
 
@@ -422,8 +438,17 @@ CHANGELOG
 -----------
 GIT LOG
 #{git_logs[mod_name][:log].gsub(/^/,'  ')}
+-----------
               EOM
             end
+
+          puts <<-EOM
+=====================================================================================
+List of Versions
+----------------
+#{version_info.join("\n")}
+=====================================================================================
+          EOM
           end
 
         # end task changelog2
