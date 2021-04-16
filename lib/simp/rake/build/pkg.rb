@@ -497,7 +497,8 @@ module Simp::Rake::Build
                 old_key_dir = File.join(@src_dir, 'assets', 'simp-gpgkeys', 'GPGKEYS')
                 if File.exist?(old_key_dir)
                   key_dirs_tried << old_key_dir
-                  public_keys = Dir.glob(File.join(old_key_dir, '*'))
+                  Dir.glob(File.join(old_key_dir, '**/*')).each {|d|
+                                        public_keys.append(d) if File.file?(d)}
                 end
               end
 
