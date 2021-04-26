@@ -1,5 +1,6 @@
 require 'simp/rake'
 require 'simp/rake/build/constants'
+require 'simp/extract_gpgkeys'
 
 module Simp; end
 module Simp::Rake; end
@@ -218,7 +219,8 @@ module Simp::Rake::Build
 
               # Add the SIMP code
               system("tar --no-same-permissions -C #{dir} -xzf #{tball}")
-
+              # Extract the GPGKEYS  and copy them to the SIMP directory
+              ExtractGpgKeys.new("#{dir}/SIMP").copy("#{dir}/SIMP")
               Dir.chdir("#{dir}/SIMP") do
                 # Add the SIMP Dependencies
                 simp_base_ver = simpver.split('-').first
